@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from nba_api.stats.endpoints import teamgamelog
 
 TOKEN = '8917243606:AAHojdm5VMfKCasorA05zVtVphYXyNb4n5k'
@@ -14,7 +14,6 @@ def send_message(text):
     params = {'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}
     return requests.post(url, json=params).json()
 
-# Загружаем модели
 with open('wnba_scaler.pkl', 'rb') as f:
     scaler = pickle.load(f)
 with open('wnba_model_win.pkl', 'rb') as f:
@@ -69,7 +68,6 @@ def get_last_5_avg(team_abbr):
     }
 
 def get_wnba_games_from_api(date_str):
-    """date_str: 'YYYYMMDD'"""
     url = f'https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard?dates={date_str}'
     resp = requests.get(url)
     if resp.status_code != 200:
@@ -84,20 +82,16 @@ def get_wnba_games_from_api(date_str):
             continue
         away = competitors[1]['team']['displayName']
         home = competitors[0]['team']['displayName']
-        # Время начала
         start_date = ev.get('date')
         start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-        start_time_str = start_dt.strftime('%H:%M')
         games.append({
             'home': home,
             'away': away,
-            'time': start_time_str,
             'start_dt': start_dt
         })
     return games
 
-# Основная логика
-now = datetime.utcnow()  # ESPN возвращает UTC
+now = datetime.now(timezone.utc)
 today_str = now.strftime('%Y%m%d')
 tomorrow_str = (now + timedelta(days=1)).strftime('%Y%m%d')
 
@@ -107,7 +101,7 @@ for d in [today_str, tomorrow_str]:
     all_games.extend(games)
 
 if not all_games:
-    send_message('Сегодня и завтра игр WNBA нет (по данным ESPN).')
+    send_message('Сегодня и завтра игр WNBA нет.')
 else:
     predictions = []
     for game in all_games:
@@ -116,7 +110,6 @@ else:
         start_dt = game['start_dt']
         hours_until = (start_dt - now).total_seconds() / 3600
 
-        # Фильтр: от 6 до 24 часов до начала
         if hours_until < 6 or hours_until > 24:
             predictions.append(f"{home} vs {away}: пропущено (не в окне 6-24 ч.)")
             continue
@@ -124,7 +117,7 @@ else:
         home_stats = get_last_5_avg(home)
         away_stats = get_last_5_avg(away)
         if home_stats is None or away_stats is None:
-            predictions.append(f"{home} vs {away}: недостаточно данных (нет 5 игр)")
+            predictions.append(f"{home} vs {away}: недостаточно данных")
             continue
 
         features = {}
@@ -138,19 +131,19 @@ else:
         pred_margin = model_margin.predict(X_scaled)[0]
 
         win_rec = 'ставка на хозяев' if prob_win > 0.60 else ('ставка на гостей' if prob_win < 0.40 else 'пропустить')
-        total_line = 160.5  # временно
+        total_line = 160.5
         total_rec = 'ТБ' if pred_total > total_line + 2 else ('ТМ' if pred_total < total_line - 2 else 'пропустить')
         margin_rec = f'фора хозяев -{abs(pred_margin):.1f}' if pred_margin > 0 else f'фора гостей {abs(pred_margin):.1f}'
 
         predictions.append(
-            f"{home} vs {away} (в {game['time']}):\n"
+            f"{home} vs {away} (в {start_dt.strftime('%H:%M')} UTC):\n"
             f"  Победа: {win_rec} ({prob_win:.0%})\n"
             f"  Тотал: {pred_total:.1f} → {total_rec}\n"
             f"  Маржа: {pred_margin:.1f} → {margin_rec}"
         )
 
     if not predictions:
-        send_message('Нет матчей, подходящих по времени или данным.')
+        send_message('Нет подходящих матчей.')
     else:
-        msg = "🏀 Прогнозы WNBA на сегодня/завтра:\n\n" + "\n\n".join(predictions)
+        msg = "🏀 Прогнозы WNBA:\n\n" + "\n\n".join(predictions)
         send_message(msg)
