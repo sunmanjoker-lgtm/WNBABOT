@@ -101,7 +101,7 @@ for d in [today_str, tomorrow_str]:
     all_games.extend(games)
 
 if not all_games:
-    send_message('Сегодня и завтра игр WNBA нет.')
+    send_message('Сегодня и завтра игр WNBA нет (по данным ESPN).')
 else:
     predictions = []
     for game in all_games:
@@ -110,14 +110,15 @@ else:
         start_dt = game['start_dt']
         hours_until = (start_dt - now).total_seconds() / 3600
 
-        if hours_until < 6 or hours_until > 24:
-            predictions.append(f"{home} vs {away}: пропущено (не в окне 6-24 ч.)")
+        # Новое окно: от 1 до 12 часов до матча
+        if hours_until < 1 or hours_until > 12:
+            predictions.append(f"{home} vs {away}: пропущено (до игры {hours_until:.1f} ч, окно 1-12 ч)")
             continue
 
         home_stats = get_last_5_avg(home)
         away_stats = get_last_5_avg(away)
         if home_stats is None or away_stats is None:
-            predictions.append(f"{home} vs {away}: недостаточно данных")
+            predictions.append(f"{home} vs {away}: недостаточно данных (нет 5 игр)")
             continue
 
         features = {}
@@ -136,14 +137,14 @@ else:
         margin_rec = f'фора хозяев -{abs(pred_margin):.1f}' if pred_margin > 0 else f'фора гостей {abs(pred_margin):.1f}'
 
         predictions.append(
-            f"{home} vs {away} (в {start_dt.strftime('%H:%M')} UTC):\n"
+            f"{home} vs {away} (через {hours_until:.1f} ч):\n"
             f"  Победа: {win_rec} ({prob_win:.0%})\n"
             f"  Тотал: {pred_total:.1f} → {total_rec}\n"
             f"  Маржа: {pred_margin:.1f} → {margin_rec}"
         )
 
     if not predictions:
-        send_message('Нет подходящих матчей.')
+        send_message('Нет матчей в окне 1-12 часов до начала.')
     else:
-        msg = "🏀 Прогнозы WNBA:\n\n" + "\n\n".join(predictions)
+        msg = "🏀 Прогнозы WNBA (1-12 ч до игры):\n\n" + "\n\n".join(predictions)
         send_message(msg)
