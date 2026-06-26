@@ -1,7 +1,8 @@
 name: Daily WNBA Predictions
 on:
   schedule:
-    - cron: '0 10 * * *'
+    - cron: '0 15 * * *'   # 18:00 МСК (15:00 UTC)
+    - cron: '59 20 * * *'  # 23:59 МСК (20:59 UTC)
   workflow_dispatch:
 
 jobs:
